@@ -1,19 +1,20 @@
 import axios from "axios";
 
 const api = axios.create({
-  // Yahan apna Render ka backend URL dalo 
-  // (e.g., https://battlebooyah-backend.onrender.com/api)
-  baseURL: "https://battlebooyah-backend.onrender.com/api", 
+  // Agar backend routes /api se start hote hain toh last me /api jor dena
+  baseURL: "https://battlebooyah-backend.onrender.com", 
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// Interceptor: Har request ke saath token bhejne ke liye
+// Request Interceptor: Token automatically har request ke header me jayega
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("adminToken");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("adminToken");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
   return config;
 });
