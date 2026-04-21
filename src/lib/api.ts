@@ -3,6 +3,7 @@ import axios from "axios";
 const api = axios.create({
   // Agar backend routes /api se start hote hain toh last me /api jor dena
   baseURL: "https://battlebooyah-backend.onrender.com", 
+  //baseURL: "http://localhost:5000",
   headers: {
     "Content-Type": "application/json",
   },

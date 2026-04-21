@@ -1,9 +1,10 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
 import api from "../../../lib/api";
 import { Tournament } from "../../../types/tournament";
-import { Plus, Trophy, Calendar, Trash2, MapPin, Sword } from "lucide-react";
+import { Plus, Calendar, Trash2, MapPin } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,22 +15,38 @@ import {
 
 export default function TournamentsPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [games, setGames] = useState<any[]>([]);
+  const [selectedGame, setSelectedGame] = useState("");
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
 
-  // Form States
   const [formData, setFormData] = useState({
     title: "",
-    game_type: "Solo",
-    map_name: "Bermuda",
+    map_name: "",
     entry_fee: "",
     prize_pool: "",
-    date_time: "",
+    match_time: "",
+    max_participants: "",
+    bonus_percentage: "",
+    mode: "solo",
   });
 
-  const fetchTournaments = async () => {
+  // 🔹 Fetch games
+  const fetchGames = async () => {
     try {
-      const res = await api.get("/tournaments");
+      const res = await api.get("/games");
+      setGames(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // 🔹 Fetch tournaments
+  const fetchTournaments = async (gameId?: string) => {
+    try {
+      const res = await api.get(
+        gameId ? `/tournaments?game_id=${gameId}` : "/tournaments"
+      );
       setTournaments(res.data);
     } catch (err) {
       console.error(err);
@@ -38,14 +55,35 @@ export default function TournamentsPage() {
     }
   };
 
-  useEffect(() => { fetchTournaments(); }, []);
+  useEffect(() => {
+    fetchGames();
+  }, []);
 
+  useEffect(() => {
+    if (selectedGame) fetchTournaments(selectedGame);
+  }, [selectedGame]);
+
+  // 🔹 Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!selectedGame) {
+      alert("Select game first");
+      return;
+    }
+
     try {
-      await api.post("/tournaments", formData);
-      setOpen(false); // Close Modal
-      fetchTournaments(); // Refresh List
+      await api.post("/tournaments/create", {
+        ...formData,
+        game_id: selectedGame,
+        entry_fee: Number(formData.entry_fee),
+        prize_pool: Number(formData.prize_pool),
+        max_participants: Number(formData.max_participants),
+        bonus_percentage: Number(formData.bonus_percentage),
+      });
+
+      setOpen(false);
+      fetchTournaments(selectedGame);
       alert("Tournament Created!");
     } catch (err) {
       alert("Failed to create tournament");
@@ -53,114 +91,171 @@ export default function TournamentsPage() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-8 ml-64">
+
+      {/* 🔥 GAME SELECT */}
+      <div className="flex gap-3 mb-6 flex-wrap">
+        {games.map((g) => (
+          <button
+            key={g.id}
+            onClick={() => setSelectedGame(g.id)}
+            className={`px-4 py-2 rounded-xl font-semibold transition ${
+              selectedGame === g.id
+                ? "bg-blue-600 text-white shadow"
+                : "bg-slate-100 hover:bg-slate-200"
+            }`}
+          >
+            {g.name}
+          </button>
+        ))}
+      </div>
+
+      {/* HEADER */}
       <div className="flex justify-between items-center mb-10">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Tournaments</h1>
-          <p className="text-slate-500">Create and manage your eSports matches.</p>
+          <p className="text-slate-500">Create and manage your matches</p>
         </div>
 
-        {/* MODAL START */}
+        {/* MODAL */}
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">
-              <Plus size={20} /> Create Match
+            <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 shadow">
+              <Plus size={20} /> Create Tournament
             </button>
           </DialogTrigger>
+
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-bold">New Tournament</DialogTitle>
+              <DialogTitle className="text-xl font-bold">
+                Create Tournament
+              </DialogTitle>
             </DialogHeader>
+
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-              <div className="grid gap-2">
-                <label className="text-sm font-bold text-slate-700">Match Title</label>
-                <input 
-                  required 
-                  className="p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Sunday Mega Match"
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
+
+              {/* TITLE */}
+              <input
+                placeholder="Tournament Title"
+                required
+                className="w-full p-2.5 border rounded-lg"
+                onChange={(e) =>
+                  setFormData({ ...formData, title: e.target.value })
+                }
+              />
+
+              {/* MODE */}
+              <select
+                className="w-full p-2.5 border rounded-lg"
+                onChange={(e) =>
+                  setFormData({ ...formData, mode: e.target.value })
+                }
+              >
+                <option value="solo">Solo</option>
+                <option value="duo">Duo</option>
+                <option value="squad">Squad</option>
+              </select>
+
+              {/* MAP */}
+              <input
+                placeholder="Map Name"
+                className="w-full p-2.5 border rounded-lg"
+                onChange={(e) =>
+                  setFormData({ ...formData, map_name: e.target.value })
+                }
+              />
+
+              {/* FEES */}
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="number"
+                  placeholder="Entry Fee"
+                  className="p-2.5 border rounded-lg"
+                  onChange={(e) =>
+                    setFormData({ ...formData, entry_fee: e.target.value })
+                  }
+                />
+                <input
+                  type="number"
+                  placeholder="Prize Pool"
+                  className="p-2.5 border rounded-lg"
+                  onChange={(e) =>
+                    setFormData({ ...formData, prize_pool: e.target.value })
+                  }
                 />
               </div>
+
+              {/* PARTICIPANTS + BONUS */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <label className="text-sm font-bold text-slate-700">Game Type</label>
-                  <select 
-                    className="p-2.5 border rounded-lg outline-none"
-                    onChange={(e) => setFormData({...formData, game_type: e.target.value})}
-                  >
-                    <option>Solo</option>
-                    <option>Duo</option>
-                    <option>Squad</option>
-                  </select>
-                </div>
-                <div className="grid gap-2">
-                  <label className="text-sm font-bold text-slate-700">Map</label>
-                  <input 
-                    className="p-2.5 border rounded-lg outline-none"
-                    placeholder="Bermuda"
-                    onChange={(e) => setFormData({...formData, map_name: e.target.value})}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <label className="text-sm font-bold text-slate-700">Entry Fee (₹)</label>
-                  <input 
-                    type="number"
-                    className="p-2.5 border rounded-lg outline-none"
-                    placeholder="20"
-                    onChange={(e) => setFormData({...formData, entry_fee: e.target.value})}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <label className="text-sm font-bold text-slate-700">Prize Pool (₹)</label>
-                  <input 
-                    type="number"
-                    className="p-2.5 border rounded-lg outline-none"
-                    placeholder="1000"
-                    onChange={(e) => setFormData({...formData, prize_pool: e.target.value})}
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <label className="text-sm font-bold text-slate-700">Match Date & Time</label>
-                <input 
-                  type="datetime-local"
-                  className="p-2.5 border rounded-lg outline-none"
-                  onChange={(e) => setFormData({...formData, date_time: e.target.value})}
+                <input
+                  type="number"
+                  placeholder="Max Participants"
+                  className="p-2.5 border rounded-lg"
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      max_participants: e.target.value,
+                    })
+                  }
+                />
+                <input
+                  type="number"
+                  placeholder="Bonus %"
+                  className="p-2.5 border rounded-lg"
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      bonus_percentage: e.target.value,
+                    })
+                  }
                 />
               </div>
-              <button className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold mt-4 hover:bg-blue-700">
-                Publish Tournament
+
+              {/* TIME */}
+              <input
+                type="datetime-local"
+                className="w-full p-2.5 border rounded-lg"
+                onChange={(e) =>
+                  setFormData({ ...formData, match_time: e.target.value })
+                }
+              />
+
+              <button className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">
+                Create Tournament
               </button>
             </form>
           </DialogContent>
         </Dialog>
-        {/* MODAL END */}
       </div>
 
-      {/* LIST SECTION */}
+      {/* LIST */}
       {loading ? (
-        <p>Loading matches...</p>
+        <p>Loading...</p>
       ) : (
         <div className="grid gap-4">
           {tournaments.map((t) => (
-            <div key={t.id} className="bg-white p-5 border rounded-2xl shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-5">
-                <div className="h-12 w-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black">
-                  {t.game_type[0]}
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg text-slate-800">{t.title}</h3>
-                  <div className="flex gap-4 text-sm text-slate-500 mt-1">
-                    <span className="flex items-center gap-1 font-semibold text-green-600">₹{t.prize_pool} Prize</span>
-                    <span className="flex items-center gap-1"><MapPin size={14}/> {t.map_name}</span>
-                    <span className="flex items-center gap-1"><Calendar size={14}/> {new Date(t.date_time).toLocaleDateString()}</span>
-                  </div>
+            <div
+              key={t.id}
+              className="bg-white p-5 border rounded-xl shadow-sm flex justify-between"
+            >
+              <div>
+                <h3 className="font-bold text-lg">{t.title}</h3>
+                <div className="flex gap-4 text-sm mt-2">
+                  <span className="text-green-600">
+                    ₹{t.prize_pool}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MapPin size={14} /> {t.map_name}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Calendar size={14} />
+                    {new Date(t.match_time).toLocaleString()}
+                  </span>
                 </div>
               </div>
-              <button className="text-red-500 p-2 hover:bg-red-50 rounded-lg">
-                <Trash2 size={20} />
+
+              <button className="text-red-500">
+                <Trash2 />
               </button>
             </div>
           ))}
@@ -169,3 +264,4 @@ export default function TournamentsPage() {
     </div>
   );
 }
+
