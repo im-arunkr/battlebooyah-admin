@@ -1,267 +1,360 @@
-
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import api from "../../../lib/api";
-import { Tournament } from "../../../types/tournament";
-import { Plus, Calendar, Trash2, MapPin } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 
-export default function TournamentsPage() {
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+export default function CreateTournamentPage() {
+  const [step, setStep] = useState(1);
   const [games, setGames] = useState<any[]>([]);
-  const [selectedGame, setSelectedGame] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<any>(null);
+  const [mode, setMode] = useState("");
+
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     title: "",
-    map_name: "",
     entry_fee: "",
     prize_pool: "",
+    per_kill_points: "",
+    map_name: "",
     match_time: "",
     max_participants: "",
     bonus_percentage: "",
-    mode: "solo",
+    prize_breakup: "",
   });
 
-  // 🔹 Fetch games
-  const fetchGames = async () => {
+  // 🔹 Fetch Games
+  useEffect(() => {
+    api.get("/games").then((res) => setGames(res.data));
+  }, []);
+
+  // 🔹 Prevent Step Skipping
+  useEffect(() => {
+    if (step === 2 && !selectedGame) setStep(1);
+    if (step === 3 && (!selectedGame || !mode)) setStep(1);
+  }, [step, selectedGame, mode]);
+
+  const inputStyle =
+    "w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500";
+
+  // 🔹 Validation
+  const validate = () => {
+    if (!selectedGame) return "Please select a game first";
+    if (!mode) return "Please select mode";
+
+    if (!formData.title.trim()) return "Tournament title required";
+    if (!formData.match_time) return "Match time required";
+
+    if (Number(formData.entry_fee) < 0) return "Entry fee invalid";
+    if (Number(formData.prize_pool) <= 0) return "Prize pool must be > 0";
+    if (Number(formData.max_participants) <= 0)
+      return "Participants must be > 0";
+
+    if (Number(formData.per_kill_points) < 0)
+      return "Per kill points invalid";
+
+    if (Number(formData.bonus_percentage) < 0)
+      return "Bonus cannot be negative";
+
+    // Prize JSON validation
     try {
-      const res = await api.get("/games");
-      setGames(res.data);
-    } catch (err) {
-      console.error(err);
+      if (formData.prize_breakup) {
+        const parsed = JSON.parse(formData.prize_breakup);
+
+        if (!Array.isArray(parsed)) {
+          return "Prize breakup must be an array";
+        }
+
+        for (const item of parsed) {
+          if (
+            typeof item.rank !== "number" ||
+            typeof item.amount !== "number"
+          ) {
+            return "Invalid prize format (rank/amount required)";
+          }
+        }
+      }
+    } catch {
+      return "Invalid Prize JSON";
     }
+
+    return null;
   };
 
-  // 🔹 Fetch tournaments
-  const fetchTournaments = async (gameId?: string) => {
+  // 🔹 Submit
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+
+    const error = validate();
+    if (error) {
+      setMessage({ type: "error", text: error });
+      return;
+    }
+
     try {
-      const res = await api.get(
-        gameId ? `/tournaments?game_id=${gameId}` : "/tournaments"
-      );
-      setTournaments(res.data);
-    } catch (err) {
-      console.error(err);
+      setLoading(true);
+      setMessage(null);
+
+      await api.post("/tournaments/create", {
+        ...formData,
+        game_id: selectedGame.id, // ✅ correct mapping
+        mode,
+        entry_fee: Number(formData.entry_fee || 0),
+        prize_pool: Number(formData.prize_pool || 0),
+        per_kill_points: Number(formData.per_kill_points || 0),
+        max_participants: Number(formData.max_participants || 0),
+        bonus_percentage: Number(formData.bonus_percentage || 0),
+        prize_breakup: formData.prize_breakup
+          ? JSON.parse(formData.prize_breakup)
+          : [],
+      });
+
+      setMessage({
+        type: "success",
+        text: "Tournament Created Successfully 🚀",
+      });
+
+      // Reset everything
+      setStep(1);
+      setSelectedGame(null);
+      setMode("");
+      setFormData({
+        title: "",
+        entry_fee: "",
+        prize_pool: "",
+        per_kill_points: "",
+        map_name: "",
+        match_time: "",
+        max_participants: "",
+        bonus_percentage: "",
+        prize_breakup: "",
+      });
+    } catch (err: any) {
+      setMessage({
+        type: "error",
+        text: err?.response?.data?.message || "Something went wrong",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchGames();
-  }, []);
-
-  useEffect(() => {
-    if (selectedGame) fetchTournaments(selectedGame);
-  }, [selectedGame]);
-
-  // 🔹 Submit
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!selectedGame) {
-      alert("Select game first");
-      return;
-    }
-
-    try {
-      await api.post("/tournaments/create", {
-        ...formData,
-        game_id: selectedGame,
-        entry_fee: Number(formData.entry_fee),
-        prize_pool: Number(formData.prize_pool),
-        max_participants: Number(formData.max_participants),
-        bonus_percentage: Number(formData.bonus_percentage),
-      });
-
-      setOpen(false);
-      fetchTournaments(selectedGame);
-      alert("Tournament Created!");
-    } catch (err) {
-      alert("Failed to create tournament");
-    }
-  };
-
   return (
-    <div className="p-8 ml-64">
+    <div className="max-w-5xl mx-auto p-6">
+      {/* MESSAGE */}
+      {message && (
+        <div
+          className={`mb-4 p-3 rounded-lg ${
+            message.type === "error"
+              ? "bg-red-500/20 text-red-300"
+              : "bg-green-500/20 text-green-300"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
 
-      {/* 🔥 GAME SELECT */}
-      <div className="flex gap-3 mb-6 flex-wrap">
-        {games.map((g) => (
-          <button
-            key={g.id}
-            onClick={() => setSelectedGame(g.id)}
-            className={`px-4 py-2 rounded-xl font-semibold transition ${
-              selectedGame === g.id
-                ? "bg-blue-600 text-white shadow"
-                : "bg-slate-100 hover:bg-slate-200"
+      {/* STEP BAR */}
+      <div className="flex gap-3 mb-6">
+        {["Game", "Mode", "Details"].map((s, i) => (
+          <div
+            key={i}
+            className={`flex-1 text-center py-2 rounded-lg text-sm ${
+              step === i + 1
+                ? "bg-indigo-600 text-white"
+                : "bg-slate-800 text-slate-400"
             }`}
           >
-            {g.name}
-          </button>
+            {s}
+          </div>
         ))}
       </div>
 
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-10">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Tournaments</h1>
-          <p className="text-slate-500">Create and manage your matches</p>
-        </div>
+      {/* STEP 1 */}
+      {step === 1 && (
+        <div className="bg-slate-900 p-6 rounded-xl">
+          <h2 className="text-white mb-4">Select Game</h2>
 
-        {/* MODAL */}
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 shadow">
-              <Plus size={20} /> Create Tournament
-            </button>
-          </DialogTrigger>
-
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle className="text-xl font-bold">
-                Create Tournament
-              </DialogTitle>
-            </DialogHeader>
-
-            <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-
-              {/* TITLE */}
-              <input
-                placeholder="Tournament Title"
-                required
-                className="w-full p-2.5 border rounded-lg"
-                onChange={(e) =>
-                  setFormData({ ...formData, title: e.target.value })
-                }
-              />
-
-              {/* MODE */}
-              <select
-                className="w-full p-2.5 border rounded-lg"
-                onChange={(e) =>
-                  setFormData({ ...formData, mode: e.target.value })
-                }
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {games.map((g) => (
+              <div
+                key={g.id}
+                onClick={() => setSelectedGame(g)}
+                className={`p-4 rounded-lg cursor-pointer border ${
+                  selectedGame?.id === g.id
+                    ? "border-indigo-500 bg-indigo-500/20"
+                    : "border-slate-700"
+                }`}
               >
-                <option value="solo">Solo</option>
-                <option value="duo">Duo</option>
-                <option value="squad">Squad</option>
-              </select>
-
-              {/* MAP */}
-              <input
-                placeholder="Map Name"
-                className="w-full p-2.5 border rounded-lg"
-                onChange={(e) =>
-                  setFormData({ ...formData, map_name: e.target.value })
-                }
-              />
-
-              {/* FEES */}
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  placeholder="Entry Fee"
-                  className="p-2.5 border rounded-lg"
-                  onChange={(e) =>
-                    setFormData({ ...formData, entry_fee: e.target.value })
-                  }
-                />
-                <input
-                  type="number"
-                  placeholder="Prize Pool"
-                  className="p-2.5 border rounded-lg"
-                  onChange={(e) =>
-                    setFormData({ ...formData, prize_pool: e.target.value })
-                  }
-                />
+                {g.name}
               </div>
+            ))}
+          </div>
 
-              {/* PARTICIPANTS + BONUS */}
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  placeholder="Max Participants"
-                  className="p-2.5 border rounded-lg"
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      max_participants: e.target.value,
-                    })
-                  }
-                />
-                <input
-                  type="number"
-                  placeholder="Bonus %"
-                  className="p-2.5 border rounded-lg"
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      bonus_percentage: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              {/* TIME */}
-              <input
-                type="datetime-local"
-                className="w-full p-2.5 border rounded-lg"
-                onChange={(e) =>
-                  setFormData({ ...formData, match_time: e.target.value })
-                }
-              />
-
-              <button className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">
-                Create Tournament
-              </button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* LIST */}
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        <div className="grid gap-4">
-          {tournaments.map((t) => (
-            <div
-              key={t.id}
-              className="bg-white p-5 border rounded-xl shadow-sm flex justify-between"
-            >
-              <div>
-                <h3 className="font-bold text-lg">{t.title}</h3>
-                <div className="flex gap-4 text-sm mt-2">
-                  <span className="text-green-600">
-                    ₹{t.prize_pool}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MapPin size={14} /> {t.map_name}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Calendar size={14} />
-                    {new Date(t.match_time).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
-              <button className="text-red-500">
-                <Trash2 />
-              </button>
-            </div>
-          ))}
+          <button
+            disabled={!selectedGame}
+            onClick={() => setStep(2)}
+            className={`mt-6 px-6 py-2 rounded-lg text-white ${
+              selectedGame
+                ? "bg-indigo-600"
+                : "bg-slate-600 cursor-not-allowed"
+            }`}
+          >
+            Next →
+          </button>
         </div>
+      )}
+
+      {/* STEP 2 */}
+      {step === 2 && (
+        <div className="bg-slate-900 p-6 rounded-xl">
+          <h2 className="text-white mb-4">Select Mode</h2>
+
+          <div className="flex gap-4">
+            {["solo", "duo", "squad"].map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`px-4 py-2 rounded-lg ${
+                  mode === m
+                    ? "bg-indigo-600 text-white"
+                    : "bg-slate-800 text-slate-300"
+                }`}
+              >
+                {m.toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex justify-between mt-6">
+            <button onClick={() => setStep(1)}>← Back</button>
+
+            <button
+              disabled={!mode}
+              onClick={() => setStep(3)}
+              className={`px-6 py-2 rounded-lg text-white ${
+                mode
+                  ? "bg-indigo-600"
+                  : "bg-slate-600 cursor-not-allowed"
+              }`}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 3 */}
+      {step === 3 && (
+        <form
+          onSubmit={handleSubmit}
+          className="bg-slate-900 p-6 rounded-xl grid md:grid-cols-2 gap-5"
+        >
+          <input
+            placeholder="Tournament Title"
+            className={inputStyle}
+            value={formData.title}
+            onChange={(e) =>
+              setFormData({ ...formData, title: e.target.value })
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Entry Fee"
+            className={inputStyle}
+            onChange={(e) =>
+              setFormData({ ...formData, entry_fee: e.target.value })
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Prize Pool"
+            className={inputStyle}
+            onChange={(e) =>
+              setFormData({ ...formData, prize_pool: e.target.value })
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Per Kill Reward"
+            className={inputStyle}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                per_kill_points: e.target.value,
+              })
+            }
+          />
+
+          <input
+            placeholder="Map Name"
+            className={inputStyle}
+            onChange={(e) =>
+              setFormData({ ...formData, map_name: e.target.value })
+            }
+          />
+
+          <input
+            type="datetime-local"
+            className={inputStyle}
+            onChange={(e) =>
+              setFormData({ ...formData, match_time: e.target.value })
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Max Participants"
+            className={inputStyle}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                max_participants: e.target.value,
+              })
+            }
+          />
+
+          <input
+            type="number"
+            placeholder="Bonus %"
+            className={inputStyle}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                bonus_percentage: e.target.value,
+              })
+            }
+          />
+
+          <textarea
+            placeholder='Prize JSON [{"rank":1,"amount":1000}]'
+            className={`md:col-span-2 ${inputStyle}`}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                prize_breakup: e.target.value,
+              })
+            }
+          />
+
+          <div className="col-span-2 flex justify-between mt-4">
+            <button type="button" onClick={() => setStep(2)}>
+              ← Back
+            </button>
+
+            <button
+              disabled={loading}
+              className="bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-2 rounded-lg text-white"
+            >
+              {loading ? "Creating..." : "🚀 Create Tournament"}
+            </button>
+          </div>
+        </form>
       )}
     </div>
   );
 }
-
